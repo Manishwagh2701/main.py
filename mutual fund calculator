@@ -1,69 +1,34 @@
-from datetime import datetime
-import requests
+from urllib import request
+import json
 
 class MutualFundProfitCalculator:
     def __init__(self, scheme_code: int, start_date: str, end_date: str, capital: float = 1000000.0):
         self.scheme_code = scheme_code
-        self.start_date = datetime.strptime(start_date, "%d-%m-%Y")
-        self.end_date = datetime.strptime(end_date, "%d-%m-%Y")
+        self.start_date = start_date
+        self.end_date = end_date
         self.capital = capital
-    
+
     def fetch_nav_data(self):
-        start_date_str = self.start_date.strftime('%d-%m-%Y')
-        end_date_str = self.end_date.strftime('%d-%m-%Y')
-        api_url = f"https://api.mfapi.in/mf/{self.scheme_code}?start={start_date_str}&end={end_date_str}"
-        response = requests.get(api_url)
-        if response.status_code == 200:
-            data = response.json()
+        api_url = f"https://api.mfapi.in/mf/{self.scheme_code}"
+        response = request.urlopen(api_url)
+        # response = requests.get(api_url)
+        if response.getcode() == 200:
+            data = json.loads(response.read().decode('utf-8'))
             return data
         else:
             raise Exception(f"Failed to fetch NAV data. Status code: {response.status_code}")
 
     def calculate_profit(self):
         nav_data = self.fetch_nav_data()
-        nav_start_date = nav_data['data'][0]['nav']
-        nav_end_date = nav_data['data'][-1]['nav']
-        units_allotted = self.capital / nav_start_date
-        value_end_date = units_allotted * nav_end_date
+        for d in nav_data["data"]:
+          if d["date"] == self.start_date:
+            first_data = d["nav"]
+          if d["date"] == self.end_date:
+            second_data = d["nav"]
+
+        units_allotted = self.capital / float(first_data)
+        value_end_date = units_allotted * float(second_data)
         net_profit = value_end_date - self.capital
         return net_profit
 
-# Create a Installation for fastapi
 
-
-from fastapi import FastAPI, Query
-from datetime import datetime
-import requests
-
-app = FastAPI()
-
-def fetch_nav_data(scheme_code: int, start_date: str, end_date: str):
-    start_date_str = datetime.strptime(start_date, "%d-%m-%Y").strftime('%d-%m-%Y')
-    end_date_str = datetime.strptime(end_date, "%d-%m-%Y").strftime('%d-%m-%Y')
-    api_url = f"https://api.mfapi.in/mf/{scheme_code}?start={start_date_str}&end={end_date_str}"
-    response = requests.get(api_url)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Failed to fetch NAV data. Status code: {response.status_code}")
-
-def calculate_profit(nav_data: dict, capital: float):
-    nav_start_date = nav_data['data'][0]['nav']
-    nav_end_date = nav_data['data'][-1]['nav']
-    units_allotted = capital / nav_start_date
-    value_end_date = units_allotted * nav_end_date
-    return value_end_date - capital
-
-@app.get("/profit")
-async def calculate_mutual_fund_profit(
-    scheme_code: int = Query(101206, title="Scheme Code", description="The unique scheme code of the mutual fund."),
-    start_date: str = Query("26-07-2023", title="Start Date", description="The purchase date of the mutual fund. (format: dd-mm-yyyy)"),
-    end_date: str = Query("18-10-2023", title="End Date", description="The redemption date of the mutual fund. (format: dd-mm-yyyy)"),
-    capital: float = Query(1000000.0, title="Capital", description="The initial investment amount.")
-):
-    try:
-        nav_data = fetch_nav_data(scheme_code, start_date, end_date)
-        profit = calculate_profit(nav_data, capital)
-        return {"profit": profit}
-    except Exception as e:
-        return {"error": str(e)}
